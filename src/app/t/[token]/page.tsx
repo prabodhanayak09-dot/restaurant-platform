@@ -54,7 +54,8 @@ export default async function TableEntryPage({
           </p>
 
           <a
-            href={`/customer?restaurant=${table.restaurant_id}&table=${table.table_id}`}
+  href={`/customer/${token}`}
+         
             className="mt-8 block w-full rounded-xl bg-black px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-gray-800"
           >
             CONTINUE
