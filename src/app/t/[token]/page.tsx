@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { createServerClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 
 type PageProps = {
   params: Promise<{
@@ -21,7 +21,7 @@ export default async function TableEntryPage({
     notFound();
   }
 
-  const supabase = createServerClient();
+ const supabase = await createClient();
 
   const { data, error } = await supabase.rpc("resolve_table_qr", {
     p_qr_token: token,
