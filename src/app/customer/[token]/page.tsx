@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createCustomerSession } from "../actions/create-session";
 
 type PageProps = {
   params: Promise<{
@@ -33,6 +34,8 @@ export default async function CustomerDetailsPage({
 
   const table = data[0];
 
+  const createSession = createCustomerSession.bind(null, token);
+
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-8">
       <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md items-center">
@@ -55,10 +58,7 @@ export default async function CustomerDetailsPage({
             </p>
           </div>
 
-          <form
-            action="/"
-            className="space-y-5"
-          >
+          <form action={createSession} className="space-y-5">
             <div>
               <label
                 htmlFor="firstName"
@@ -73,6 +73,7 @@ export default async function CustomerDetailsPage({
                 type="text"
                 placeholder="Enter your first name"
                 maxLength={50}
+                autoComplete="given-name"
                 required
                 className="w-full rounded-xl border border-gray-200 px-4 py-3 text-gray-900 outline-none transition focus:border-black focus:ring-2 focus:ring-gray-200"
               />
@@ -92,6 +93,7 @@ export default async function CustomerDetailsPage({
                 type="tel"
                 placeholder="+91 XXXXX XXXXX"
                 maxLength={20}
+                autoComplete="tel"
                 required
                 className="w-full rounded-xl border border-gray-200 px-4 py-3 text-gray-900 outline-none transition focus:border-black focus:ring-2 focus:ring-gray-200"
               />
@@ -104,8 +106,8 @@ export default async function CustomerDetailsPage({
 
             <div className="rounded-xl bg-gray-50 p-4">
               <p className="text-xs leading-5 text-gray-500">
-                You are ordering at Table {table.table_number}. Your table is
-                securely linked to this QR code.
+                You are ordering at Table {table.table_number}. This session
+                is independent from other customers using the same table QR.
               </p>
             </div>
 
