@@ -1,6 +1,6 @@
-import Image from "next/image";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import CustomerMenu from "./CustomerMenu";
 
 type PageProps = {
   params: Promise<{
@@ -8,11 +8,21 @@ type PageProps = {
   }>;
 };
 
-type MenuCategory = {
-  id: string;
-  name: string;
-  description: string | null;
-  sort_order: number;
+type CustomerMenuRow = {
+  category_id: string;
+  category_name: string;
+  category_description: string | null;
+  category_sort_order: number;
+  item_id: string;
+  item_category_id: string;
+  item_name: string;
+  item_description: string | null;
+  item_price_paise: number;
+  item_image_url: string | null;
+  item_is_available: boolean;
+  item_sort_order: number;
+  item_preparation_time_minutes: number | null;
+  item_stock_quantity: number | null;
 };
 
 type MenuItem = {
@@ -26,6 +36,14 @@ type MenuItem = {
   sort_order: number;
   preparation_time_minutes: number | null;
   stock_quantity: number | null;
+};
+
+type MenuCategory = {
+  id: string;
+  name: string;
+  description: string | null;
+  sort_order: number;
+  items: MenuItem[];
 };
 
 export default async function MenuPage({ params }: PageProps) {
@@ -42,263 +60,91 @@ export default async function MenuPage({ params }: PageProps) {
 
   const supabase = await createClient();
 
-  const { data: sessionData, error: sessionError } =
-    await supabase.rpc("resolve_customer_session", {
-      p_session_token: sessionToken,
-    });
+  // Resolve customer session
+  const {
+    data: sessionData,
+    error: sessionError,
+  } = await supabase.rpc("resolve_customer_session", {
+    p_session_token: sessionToken,
+  });
 
-  if (sessionError || !sessionData || sessionData.length === 0) {
+  if (
+    sessionError ||
+    !sessionData ||
+    sessionData.length === 0
+  ) {
     notFound();
   }
 
   const session = sessionData[0];
 
+  // Load menu through secure customer RPC
   const {
-    data: categories,
-    error: categoriesError,
-  } = await supabase
-    .from("menu_categories")
-    .select("id, name, description, sort_order")
-    .eq("restaurant_id", session.restaurant_id)
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true })
-    .order("name", { ascending: true });
+    data: menuData,
+    error: menuError,
+  } = await supabase.rpc("get_customer_menu", {
+    p_session_token: sessionToken,
+  });
 
-  if (categoriesError) {
-    throw new Error("Unable to load menu categories.");
+  if (menuError) {
+    console.error("Customer menu RPC error:", menuError);
+    throw new Error("Unable to load restaurant menu.");
   }
 
-  const { data: items, error: itemsError } = await supabase
-    .from("menu_items")
-    .select(
-      `
-        id,
-        category_id,
-        name,
-        description,
-        price_paise,
-        image_url,
-        is_available,
-        sort_order,
-        preparation_time_minutes,
-        stock_quantity
-      `
-    )
-    .eq("restaurant_id", session.restaurant_id)
-    .eq("is_available", true)
-    .order("sort_order", { ascending: true })
-    .order("name", { ascending: true });
+  const rows = (menuData ?? []) as CustomerMenuRow[];
 
-  if (itemsError) {
-    throw new Error("Unable to load menu items.");
+  // Convert RPC rows into categories
+  const categoryMap = new Map<string, MenuCategory>();
+
+  for (const row of rows) {
+    if (!categoryMap.has(row.category_id)) {
+      categoryMap.set(row.category_id, {
+        id: row.category_id,
+        name: row.category_name,
+        description: row.category_description,
+        sort_order: row.category_sort_order,
+        items: [],
+      });
+    }
+
+    categoryMap.get(row.category_id)?.items.push({
+      id: row.item_id,
+      category_id: row.item_category_id,
+      name: row.item_name,
+      description: row.item_description,
+      price_paise: Number(row.item_price_paise),
+      image_url: row.item_image_url,
+      is_available: row.item_is_available,
+      sort_order: row.item_sort_order,
+      preparation_time_minutes:
+        row.item_preparation_time_minutes,
+      stock_quantity: row.item_stock_quantity,
+    });
   }
 
-  const safeCategories = (categories ?? []) as MenuCategory[];
-  const safeItems = (items ?? []) as MenuItem[];
+  const categoriesWithItems = Array.from(
+    categoryMap.values()
+  )
+    .sort((a, b) => {
+      if (a.sort_order !== b.sort_order) {
+        return a.sort_order - b.sort_order;
+      }
 
-  const categoriesWithItems = safeCategories
+      return a.name.localeCompare(b.name);
+    })
     .map((category) => ({
       ...category,
-      items: safeItems.filter(
-        (item) => item.category_id === category.id
+      items: category.items.sort(
+        (a, b) => a.sort_order - b.sort_order
       ),
-    }))
-    .filter((category) => category.items.length > 0);
-
-  const uncategorizedItems = safeItems.filter(
-    (item) =>
-      !item.category_id ||
-      !safeCategories.some(
-        (category) => category.id === item.category_id
-      )
-  );
-
-  const formatPrice = (paise: number) =>
-    `₹${(paise / 100).toFixed(2)}`;
+    }));
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      <div className="mx-auto w-full max-w-2xl px-4 py-6 pb-28 sm:px-6">
-        <header className="mb-8 rounded-3xl bg-white p-6 shadow-sm">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-400">
-                Table {session.table_number}
-              </p>
-
-              <h1 className="mt-2 text-3xl font-bold tracking-tight text-gray-900">
-                {session.restaurant_name}
-              </h1>
-
-              <p className="mt-2 text-sm text-gray-500">
-                Welcome, {session.customer_first_name}. Choose your items below.
-              </p>
-            </div>
-
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-black text-xl text-white">
-              🍽️
-            </div>
-          </div>
-        </header>
-
-        <div className="space-y-8">
-          {categoriesWithItems.map((category) => (
-            <section key={category.id}>
-              <div className="mb-4">
-                <h2 className="text-xl font-bold text-gray-900">
-                  {category.name}
-                </h2>
-
-                {category.description && (
-                  <p className="mt-1 text-sm text-gray-500">
-                    {category.description}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-3">
-                {category.items.map((item) => {
-                  const soldOut =
-                    item.stock_quantity !== null &&
-                    item.stock_quantity <= 0;
-
-                  return (
-                    <article
-                      key={item.id}
-                      className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm"
-                    >
-                      <div className="flex gap-4 p-4">
-                        {item.image_url ? (
-                          <Image
-                            src={item.image_url}
-                            alt={item.name}
-                            width={96}
-                            height={96}
-                            className="h-24 w-24 shrink-0 rounded-xl object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-2xl">
-                            🍴
-                          </div>
-                        )}
-
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-3">
-                            <h3 className="font-semibold text-gray-900">
-                              {item.name}
-                            </h3>
-
-                            <p className="shrink-0 font-semibold text-gray-900">
-                              {formatPrice(item.price_paise)}
-                            </p>
-                          </div>
-
-                          {item.description && (
-                            <p className="mt-1 text-sm leading-5 text-gray-500">
-                              {item.description}
-                            </p>
-                          )}
-
-                          <div className="mt-3 flex items-center justify-between gap-3">
-                            <div className="text-xs text-gray-400">
-                              {item.preparation_time_minutes
-                                ? `${item.preparation_time_minutes} min`
-                                : "Preparation time varies"}
-                            </div>
-
-                            <button
-                              type="button"
-                              disabled={soldOut}
-                              className="rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300"
-                            >
-                              {soldOut ? "SOLD OUT" : "+ ADD"}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
-
-          {uncategorizedItems.length > 0 && (
-            <section>
-              <div className="mb-4">
-                <h2 className="text-xl font-bold text-gray-900">
-                  More items
-                </h2>
-              </div>
-
-              <div className="space-y-3">
-                {uncategorizedItems.map((item) => {
-                  const soldOut =
-                    item.stock_quantity !== null &&
-                    item.stock_quantity <= 0;
-
-                  return (
-                    <article
-                      key={item.id}
-                      className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm"
-                    >
-                      <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <h3 className="font-semibold text-gray-900">
-                            {item.name}
-                          </h3>
-
-                          {item.description && (
-                            <p className="mt-1 text-sm text-gray-500">
-                              {item.description}
-                            </p>
-                          )}
-
-                          <p className="mt-2 text-sm font-semibold text-gray-900">
-                            {formatPrice(item.price_paise)}
-                          </p>
-                        </div>
-
-                        <button
-                          type="button"
-                          disabled={soldOut}
-                          className="rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
-                        >
-                          {soldOut ? "SOLD OUT" : "+ ADD"}
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            </section>
-          )}
-
-          {categoriesWithItems.length === 0 &&
-            uncategorizedItems.length === 0 && (
-              <div className="rounded-2xl bg-white p-8 text-center shadow-sm">
-                <p className="font-medium text-gray-900">
-                  Menu unavailable
-                </p>
-
-                <p className="mt-2 text-sm text-gray-500">
-                  This restaurant has no available menu items right now.
-                </p>
-              </div>
-            )}
-        </div>
-      </div>
-
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-200 bg-white/95 p-4 backdrop-blur">
-        <div className="mx-auto max-w-2xl">
-          <button
-            type="button"
-            className="w-full rounded-2xl bg-black px-5 py-4 text-sm font-bold text-white"
-          >
-            🛒 VIEW CART
-          </button>
-        </div>
-      </div>
-    </main>
+    <CustomerMenu
+      restaurantName={session.restaurant_name}
+      tableNumber={session.table_number}
+      customerFirstName={session.customer_first_name}
+      categories={categoriesWithItems}
+    />
   );
 }
