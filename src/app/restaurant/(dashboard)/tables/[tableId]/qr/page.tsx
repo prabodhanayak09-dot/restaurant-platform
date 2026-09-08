@@ -123,7 +123,9 @@ export default async function TableQRPage({
    */
   const siteUrl =
     process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
-    "http://192.168.31.166:3000";
+    (process.env.NODE_ENV === "production"
+      ? "https://restaurant-platform-flame.vercel.app"
+      : "http://localhost:3000");
 
   const customerUrl = `${siteUrl}/t/${qr.qr_token}`;
 
