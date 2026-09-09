@@ -16,6 +16,7 @@ export default async function RestaurantLoginPage({
     data: { user },
   } = await supabase.auth.getUser();
 
+  // If already logged in, send the user to the correct interface.
   if (user) {
     const { data: membership } = await supabase
       .from("restaurant_members")
@@ -26,6 +27,10 @@ export default async function RestaurantLoginPage({
 
     if (membership?.restaurant_id && membership.role === "owner") {
       redirect("/restaurant");
+    }
+
+    if (membership?.restaurant_id && membership.role === "staff") {
+      redirect("/staff");
     }
 
     if (!membership) {
@@ -51,6 +56,7 @@ export default async function RestaurantLoginPage({
 
     const supabase = await createClient();
 
+    // Sign in with Supabase Auth
     const { data, error: signInError } =
       await supabase.auth.signInWithPassword({
         email,
@@ -61,6 +67,7 @@ export default async function RestaurantLoginPage({
       redirect("/restaurant/login?error=invalid");
     }
 
+    // Find the user's restaurant membership and role.
     const { data: membership, error: membershipError } =
       await supabase
         .from("restaurant_members")
@@ -78,11 +85,18 @@ export default async function RestaurantLoginPage({
       redirect("/restaurant/onboarding");
     }
 
+    // STAFF → Staff interface
+    if (membership.role === "staff") {
+      redirect("/staff");
+    }
+
+    // Anything other than owner is not allowed here.
     if (membership.role !== "owner") {
       await supabase.auth.signOut();
       redirect("/restaurant/login?error=unauthorized");
     }
 
+    // OWNER → Check restaurant
     const { data: restaurant, error: restaurantError } =
       await supabase
         .from("restaurants")
@@ -100,6 +114,7 @@ export default async function RestaurantLoginPage({
       redirect("/restaurant/login?error=inactive");
     }
 
+    // OWNER → Restaurant admin interface
     redirect("/restaurant");
   }
 
@@ -107,7 +122,7 @@ export default async function RestaurantLoginPage({
     error === "invalid"
       ? "Invalid email or password."
       : error === "unauthorized"
-        ? "This account is not a restaurant owner."
+        ? "This account is not authorized."
         : error === "inactive"
           ? "This restaurant is currently inactive."
           : error === "no-restaurant"
@@ -122,6 +137,7 @@ export default async function RestaurantLoginPage({
     <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-md items-center justify-center">
         <div className="w-full rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-100 sm:p-8">
+
           <div className="mb-8 text-center">
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-black text-2xl text-white">
               🍽️
@@ -151,6 +167,7 @@ export default async function RestaurantLoginPage({
           )}
 
           <form action={login} className="space-y-5">
+
             <div>
               <label
                 htmlFor="email"
@@ -195,11 +212,13 @@ export default async function RestaurantLoginPage({
             >
               SIGN IN
             </button>
+
           </form>
 
           <p className="mt-6 text-center text-xs leading-5 text-gray-400">
-            Authorized restaurant owner accounts only.
+            Restaurant owners and authorized staff can sign in here.
           </p>
+
         </div>
       </div>
     </main>
