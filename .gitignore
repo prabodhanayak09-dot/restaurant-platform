@@ -39,3 +39,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Temporary editor/backup files
+*.backup
+*.before-cart-fix
+*.current-backup
+*.final-backup
+*.save
+*.pagexx
+
+# Additional temporary files
+*.broken-backup
+*.tsx*
