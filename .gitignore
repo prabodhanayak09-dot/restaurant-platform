@@ -50,4 +50,3 @@ next-env.d.ts
 
 # Additional temporary files
 *.broken-backup
-*.tsx*
