@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
+
 import { createClient } from "@/lib/supabase/server";
+
 import CustomerMenu from "./CustomerMenu";
 
 type PageProps = {
@@ -46,12 +48,14 @@ type MenuCategory = {
   items: MenuItem[];
 };
 
-export default async function MenuPage({ params }: PageProps) {
+export default async function MenuPage({
+  params,
+}: PageProps) {
   const { sessionToken } = await params;
 
   const isUuid =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      sessionToken
+      sessionToken,
     );
 
   if (!isUuid) {
@@ -60,7 +64,6 @@ export default async function MenuPage({ params }: PageProps) {
 
   const supabase = await createClient();
 
-  // Resolve customer session
   const {
     data: sessionData,
     error: sessionError,
@@ -78,7 +81,6 @@ export default async function MenuPage({ params }: PageProps) {
 
   const session = sessionData[0];
 
-  // Load menu through secure customer RPC
   const {
     data: menuData,
     error: menuError,
@@ -93,7 +95,6 @@ export default async function MenuPage({ params }: PageProps) {
 
   const rows = (menuData ?? []) as CustomerMenuRow[];
 
-  // Convert RPC rows into categories
   const categoryMap = new Map<string, MenuCategory>();
 
   for (const row of rows) {
@@ -123,7 +124,7 @@ export default async function MenuPage({ params }: PageProps) {
   }
 
   const categoriesWithItems = Array.from(
-    categoryMap.values()
+    categoryMap.values(),
   )
     .sort((a, b) => {
       if (a.sort_order !== b.sort_order) {
@@ -135,7 +136,7 @@ export default async function MenuPage({ params }: PageProps) {
     .map((category) => ({
       ...category,
       items: category.items.sort(
-        (a, b) => a.sort_order - b.sort_order
+        (a, b) => a.sort_order - b.sort_order,
       ),
     }));
 
@@ -144,6 +145,7 @@ export default async function MenuPage({ params }: PageProps) {
       restaurantName={session.restaurant_name}
       tableNumber={session.table_number}
       customerFirstName={session.customer_first_name}
+      sessionToken={sessionToken}
       categories={categoriesWithItems}
     />
   );

@@ -1,10 +1,17 @@
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
 type StaffJoinPageProps = {
   params: Promise<{
     token: string;
   }>;
+};
+
+type StaffInvitation = {
+  id: string;
+  restaurant_id: string;
+  token: string;
+  expires_at: string;
+  restaurant_name: string;
 };
 
 export default async function StaffJoinPage({
@@ -14,19 +21,27 @@ export default async function StaffJoinPage({
 
   const supabase = await createClient();
 
-  const { data: invitation, error } = await supabase
-    .from("staff_invitations")
-    .select("id, restaurant_id, token, expires_at, used_at, is_active")
-    .eq("token", token)
-    .eq("is_active", true)
-    .maybeSingle();
+  /*
+   * The QR token is the only authority for identifying the restaurant.
+   *
+   * We intentionally use the SECURITY DEFINER RPC instead of reading
+   * staff_invitations directly, because anonymous users must not have
+   * SELECT access to that table.
+   */
 
-  if (
-    error ||
-    !invitation ||
-    invitation.used_at ||
-    new Date(invitation.expires_at) <= new Date()
-  ) {
+  const { data: invitationRows, error } = await supabase.rpc(
+    "get_staff_invitation",
+    {
+      p_token: token,
+    }
+  );
+
+  const invitation =
+    (Array.isArray(invitationRows)
+      ? invitationRows[0]
+      : invitationRows) as StaffInvitation | null;
+
+  if (error || !invitation) {
     return (
       <main className="min-h-screen bg-gray-50 px-4 py-10">
         <div className="mx-auto max-w-md">
@@ -40,33 +55,8 @@ export default async function StaffJoinPage({
             </h1>
 
             <p className="mt-2 text-sm leading-6 text-gray-500">
-              This staff invitation is invalid, expired, or has already been
-              used.
-            </p>
-          </section>
-        </div>
-      </main>
-    );
-  }
-
-  const { data: restaurant } = await supabase
-    .from("restaurants")
-    .select("id, name")
-    .eq("id", invitation.restaurant_id)
-    .eq("is_active", true)
-    .maybeSingle();
-
-  if (!restaurant) {
-    return (
-      <main className="min-h-screen bg-gray-50 px-4 py-10">
-        <div className="mx-auto max-w-md">
-          <section className="rounded-3xl bg-white p-6 text-center shadow-sm ring-1 ring-gray-100 sm:p-8">
-            <h1 className="text-2xl font-bold text-gray-900">
-              Restaurant unavailable
-            </h1>
-
-            <p className="mt-2 text-sm text-gray-500">
-              This restaurant is currently unavailable.
+              This staff invitation is invalid, expired, or no longer
+              active.
             </p>
           </section>
         </div>
@@ -88,11 +78,11 @@ export default async function StaffJoinPage({
             </p>
 
             <h1 className="mt-2 text-2xl font-bold tracking-tight text-gray-900">
-              Join {restaurant.name}
+              Join {invitation.restaurant_name}
             </h1>
 
             <p className="mt-2 text-sm leading-6 text-gray-500">
-              Enter your details to join this restaurant as a staff member.
+              Create your staff account to access restaurant orders.
             </p>
           </div>
 
@@ -101,12 +91,16 @@ export default async function StaffJoinPage({
             method="POST"
             className="space-y-5 p-6 sm:p-8"
           >
-            <input type="hidden" name="token" value={invitation.token} />
+            <input
+              type="hidden"
+              name="token"
+              value={invitation.token}
+            />
 
             <div>
               <label
                 htmlFor="name"
-                className="block text-sm font-semibold text-gray-900"
+                className="text-sm font-medium text-gray-800"
               >
                 Full name
               </label>
@@ -116,16 +110,18 @@ export default async function StaffJoinPage({
                 name="name"
                 type="text"
                 required
+                minLength={2}
+                maxLength={100}
                 autoComplete="name"
-                placeholder="Enter your name"
-                className="mt-2 h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-sm text-gray-900 outline-none transition focus:border-black"
+                className="mt-2 h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-sm text-gray-900 outline-none transition focus:border-black focus:ring-2 focus:ring-gray-100"
+                placeholder="Enter your full name"
               />
             </div>
 
             <div>
               <label
                 htmlFor="email"
-                className="block text-sm font-semibold text-gray-900"
+                className="text-sm font-medium text-gray-800"
               >
                 Email
               </label>
@@ -135,16 +131,17 @@ export default async function StaffJoinPage({
                 name="email"
                 type="email"
                 required
+                maxLength={254}
                 autoComplete="email"
-                placeholder="Enter your email"
-                className="mt-2 h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-sm text-gray-900 outline-none transition focus:border-black"
+                className="mt-2 h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-sm text-gray-900 outline-none transition focus:border-black focus:ring-2 focus:ring-gray-100"
+                placeholder="you@example.com"
               />
             </div>
 
             <div>
               <label
                 htmlFor="phone"
-                className="block text-sm font-semibold text-gray-900"
+                className="text-sm font-medium text-gray-800"
               >
                 Phone number
               </label>
@@ -154,22 +151,71 @@ export default async function StaffJoinPage({
                 name="phone"
                 type="tel"
                 required
+                maxLength={20}
                 autoComplete="tel"
+                className="mt-2 h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-sm text-gray-900 outline-none transition focus:border-black focus:ring-2 focus:ring-gray-100"
                 placeholder="Enter your phone number"
-                className="mt-2 h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-sm text-gray-900 outline-none transition focus:border-black"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="password"
+                className="text-sm font-medium text-gray-800"
+              >
+                Password
+              </label>
+
+              <input
+                id="password"
+                name="password"
+                type="password"
+                required
+                minLength={8}
+                maxLength={72}
+                autoComplete="new-password"
+                className="mt-2 h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-sm text-gray-900 outline-none transition focus:border-black focus:ring-2 focus:ring-gray-100"
+                placeholder="Create a password"
+              />
+
+              <p className="mt-2 text-xs text-gray-400">
+                Use at least 8 characters.
+              </p>
+            </div>
+
+            <div>
+              <label
+                htmlFor="confirm_password"
+                className="text-sm font-medium text-gray-800"
+              >
+                Confirm password
+              </label>
+
+              <input
+                id="confirm_password"
+                name="confirm_password"
+                type="password"
+                required
+                minLength={8}
+                maxLength={72}
+                autoComplete="new-password"
+                className="mt-2 h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-sm text-gray-900 outline-none transition focus:border-black focus:ring-2 focus:ring-gray-100"
+                placeholder="Re-enter your password"
               />
             </div>
 
             <p className="rounded-xl bg-gray-50 p-4 text-xs leading-5 text-gray-500">
-              Your information is used to identify you as a staff member of
-              this restaurant and provide access to restaurant orders.
+              Your information is used to create your staff account and
+              provide access to this restaurant's staff system. Your
+              account will be assigned to this restaurant automatically
+              from the invitation QR code.
             </p>
 
             <button
               type="submit"
-              className="flex h-12 w-full items-center justify-center rounded-xl bg-black px-5 text-sm font-semibold text-white transition hover:bg-gray-800"
+              className="flex h-12 w-full items-center justify-center rounded-xl bg-black px-5 text-sm font-semibold text-white transition hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-300 active:scale-[0.99]"
             >
-              CONTINUE
+              CREATE STAFF ACCOUNT
             </button>
           </form>
         </section>
